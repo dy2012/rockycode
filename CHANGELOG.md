@@ -9,15 +9,22 @@ change between minor versions.
 
 ### Added
 - **Local ASR backend** (plan C): `voice_asr local` transcribes
-  utterances on-device with MLX Whisper (~0.3–0.8 s on Apple Silicon,
-  offline, the audio never leaves the machine — needs
-  `pip install mlx-whisper`; the model downloads once on first use,
-  `voice_asr_model` picks tiny vs base). Same utterance-level contract
-  as the DeepSeek backend — one dispatch in the app
-  (`_voice_asr_transcribe`), everything else (VAD, talk machine,
-  readback) untouched. `deepseek` stays the default (zero-setup); both
-  keys hot-apply via `/config`. Errors from the local backend surface in
-  the same one-line shape (missing install → the exact pip fix).
+  utterances on-device with MLX Whisper (offline, the audio never
+  leaves the machine — needs `pip install mlx-whisper`; the model
+  downloads once on first use, `voice_asr_model` picks tiny vs base).
+  Same utterance-level contract as the DeepSeek backend — one dispatch
+  in the app (`_voice_asr_transcribe`), everything else (VAD, talk
+  machine, readback) untouched. `deepseek` stays the default
+  (zero-setup); both keys hot-apply via `/config`. Errors surface in the
+  same one-line shape (missing install → the exact pip fix).
+  An x86_64 python under Rosetta (the classic `/usr/local/anaconda3` on
+  Apple Silicon) can never import mlx — transcribe() bridges to a
+  dedicated arm64 venv (`~/rockycode-venv`, or `ROCKYCODE_VENV_PYTHON`)
+  as a subprocess running this same file (WAV on stdin, text on stdout),
+  with `arch -arm64` forced from a HARDWARE check (`sysctl
+  hw.optional.arm64` — `os.uname().machine` lies under Rosetta, found
+  live). Verified end-to-end on hardware: TTS speech transcribed
+  exactly through the bridge, ~2-3 s per call incl. model load.
 - **Readback is now OPTIONAL and its audio is gapless.** Talk mode
   respects `voice_readback` instead of forcing it on — off means a
   voice-in / screen-out conversation. And the stutter is gone (found
