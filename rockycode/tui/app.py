@@ -679,6 +679,7 @@ class RockyCodeApp(App):
         voice_end_silence_ms: int = 700, voice_threshold: int = 700,
         voice_min_speech_ms: int = 200, voice_talk: str = "off",
         voice_barge_speaking: str = "off",
+        voice_asr: str = "deepseek", voice_asr_model: str = "mlx-community/whisper-base-mlx",
         initial_text: str = "",
     ) -> None:
         super().__init__()
@@ -749,6 +750,8 @@ class RockyCodeApp(App):
         self._voice_threshold = voice_threshold
         self._voice_min_speech_ms = voice_min_speech_ms
         self._voice_barge_speaking = voice_barge_speaking == "on"
+        self._voice_asr = voice_asr
+        self._voice_asr_model = voice_asr_model
         self._voice_feeder = voice_mod.SentenceFeeder()   # per turn — reset in _drive_turn
         self._voice_player = None          # tts.Player, lazy — first sentence spoken
         self._voice_queue: asyncio.Queue | None = None
@@ -973,6 +976,21 @@ class RockyCodeApp(App):
                 break  # died — _voice_deliver's empty branch names the reason
         await self._voice_deliver(accumulated + rec.finish_segment(), line)
 
+    async def _voice_asr_transcribe(self, wav: bytes) -> tuple[str, float]:
+        """The ASR dispatch (plan C): config voice_asr deepseek → the cloud
+        backend on the home key; local → MLX Whisper on-device (blocking —
+        run via to_thread; its errors surface in the same AsrError shape
+        the call sites already handle)."""
+        from rockycode.engine import asr as asr_mod
+        if self._voice_asr == "local":
+            from rockycode.engine import asr_local
+            try:
+                return await asyncio.to_thread(
+                    asr_local.transcribe, wav, model=self._voice_asr_model)
+            except asr_local.LocalAsrError as e:
+                raise asr_mod.AsrError(str(e)) from e
+        return await asr_mod.transcribe(wav)
+
     async def _voice_stall_restart(self, rec, line: Static, accumulated: bytes) -> tuple[bytes, str]:
         """The mic is alive but silent: restart it once, keeping the clip so
         far. Returns (accumulated, error) — error non-empty when the restart
@@ -1011,7 +1029,7 @@ class RockyCodeApp(App):
         line.update(f"[{MUTED}]🎙 transcribing…[/]")
         try:
             wav = await asyncio.to_thread(voice_mod.pcm_to_wav, seg)
-            text, _dur = await asr_mod.transcribe(wav)
+            text, _dur = await self._voice_asr_transcribe(wav)
         except asr_mod.AsrError as e:
             self._voice.transcribed()
             self._render_voice_chip()
@@ -1312,7 +1330,7 @@ class RockyCodeApp(App):
             self._render_voice_chip()
             try:
                 wav = await asyncio.to_thread(voice_mod.pcm_to_wav, seg)
-                text, _dur = await asr_mod.transcribe(wav)
+                text, _dur = await self._voice_asr_transcribe(wav)
             except asr_mod.AsrError as e:
                 line.update(f"[{MUTED}]🎙 {escape(str(e))}[/]")
                 self._talk.transcript("")  # back to LISTENING
@@ -3350,6 +3368,14 @@ class RockyCodeApp(App):
                         note = ("applied now — voice interrupts mid-speech"
                                 if self._voice_barge_speaking
                                 else "applied now — mid-speech interrupts need the hotkey")
+                    elif parts[1] == "voice_asr":
+                        self._voice_asr = v
+                        note = ("applied now — next utterance transcribes locally"
+                                if v == "local"
+                                else "applied now — next utterance uploads to DeepSeek ASR")
+                    elif parts[1] == "voice_asr_model":
+                        self._voice_asr_model = v
+                        note = "applied now — the next local transcription uses it"
                     elif parts[1] == "voice_talk":
                         note = ("applied now — talk on" if v == "on" else "applied now — talk off")
                         await self._talk_set(v == "on")
@@ -4307,6 +4333,7 @@ def run_app(
     voice_end_silence_ms: int = 700, voice_threshold: int = 700,
     voice_min_speech_ms: int = 200, voice_talk: str = "off",
     voice_barge_speaking: str = "off",
+    voice_asr: str = "deepseek", voice_asr_model: str = "mlx-community/whisper-base-mlx",
     initial_text: str = "",
 ):
     """Run the chat TUI. /goal runs in its own screen inside the app and pops back,
@@ -4323,5 +4350,6 @@ def run_app(
         voice_end_silence_ms=voice_end_silence_ms, voice_threshold=voice_threshold,
         voice_min_speech_ms=voice_min_speech_ms,
         voice_talk=voice_talk, voice_barge_speaking=voice_barge_speaking,
+        voice_asr=voice_asr, voice_asr_model=voice_asr_model,
         initial_text=initial_text,
     ).run()

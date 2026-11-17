@@ -127,12 +127,14 @@ class TalkRec:
         return ""
 
 
-def build(script=None, *, voice_readback="off", voice_barge_speaking="off"):
+def build(script=None, *, voice_readback="off", voice_barge_speaking="off",
+          voice_asr="deepseek"):
     script = script or Script()
     client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=script))
     engine = Engine(model="fake", client=client, workdir=WD, registry={})
     app = RockyCodeApp(engine, voice_readback=voice_readback,
-                       voice_barge_speaking=voice_barge_speaking)
+                       voice_barge_speaking=voice_barge_speaking,
+                       voice_asr=voice_asr)
     return app, engine, script
 
 
@@ -275,6 +277,32 @@ async def test_talk_barge_during_speaking():
         tts_mod.synthesize = REAL_SYNTH
         voice_mod.STALL_S = 3.0
     print("  barge mid-sentence: the tail is protected too  ✓")
+
+
+async def test_local_asr_backend_dispatch():
+    # voice_asr local routes the clip to the LOCAL backend (plan C) — the
+    # same utterance → transcript flow, a different transcribe call.
+    import rockycode.engine.asr_local as asr_local
+
+    def fake_local(wav, *, model):  # SYNC — the dispatch runs it via to_thread
+        return "本地转写", 1500.0
+
+    asr_local.transcribe = fake_local
+    rec_mod.Recorder = TalkRec
+    voice_mod.STALL_S = 300.0
+    app, _, _ = build(voice_asr="local")
+    try:
+        async with app.run_test() as pilot:
+            await wait_until(pilot, lambda: "ctrl+g" in txt(app))
+            await pilot.press(*"/voice talk on")
+            await pilot.press("enter")
+            await wait_until(pilot, lambda: app._talk.phase == "listening")
+            app._recorder.q.extend([TONE, SIL_300, SIL_900])
+            ok = await wait_until(pilot, lambda: "本地转写" in txt(app))
+            assert ok, txt(app)  # the local transcript auto-submitted
+    finally:
+        voice_mod.STALL_S = 3.0
+    print("  local ASR dispatch: voice_asr local routes the clip on-device  ✓")
 
 
 async def test_config_readback_applies_live():
@@ -515,6 +543,7 @@ def run():
     asyncio.run(test_talk_no_echo_barge())
     asyncio.run(test_talk_hotkey_barges_mid_turn())
     asyncio.run(test_talk_hotkey_barges_mid_speech())
+    asyncio.run(test_local_asr_backend_dispatch())
     asyncio.run(test_config_readback_applies_live())
     asyncio.run(test_talk_hotkey_pauses())
 

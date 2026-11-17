@@ -102,6 +102,13 @@ DEFAULTS: dict[str, Any] = {
     # interrupts; speech interrupts work while he thinks/works silently).
     # HEADPHONES: turn ON for voice interrupts mid-speech too.
     "voice_barge_speaking": "off",  # on | off
+    # ASR backend (plan C): `deepseek` uploads the clip (whole-file, 1-3 s,
+    # rides the home key); `local` transcribes on-device with MLX Whisper
+    # (~0.3-0.8 s on Apple Silicon, offline, audio never leaves the
+    # machine — needs `pip install mlx-whisper`, model downloads on first
+    # use). Same utterance-level contract — everything else is untouched.
+    "voice_asr": "deepseek",        # deepseek | local
+    "voice_asr_model": "mlx-community/whisper-base-mlx",  # tiny = faster, base = better
 }
 
 _ALLOWED = {
@@ -115,6 +122,7 @@ _ALLOWED = {
     "voice_engine": {"off", "deepseek"},
     "voice_talk": {"on", "off"},
     "voice_barge_speaking": {"on", "off"},
+    "voice_asr": {"deepseek", "local"},
     "voice_readback": {"on", "off"},
     "voice_autosend": {"on", "off"},
     "voice_autoend": {"on", "off"},

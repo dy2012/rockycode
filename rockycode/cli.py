@@ -617,6 +617,7 @@ def chat(
         voice_min_speech_ms=cfg["voice_min_speech_ms"],
         voice_talk=cfg["voice_talk"],
         voice_barge_speaking=cfg["voice_barge_speaking"],
+        voice_asr=cfg["voice_asr"], voice_asr_model=cfg["voice_asr_model"],
         initial_text=initial_text,
     )
     engine.finalize_outcome()  # heuristic outcome record (self-evolve phase 0)
